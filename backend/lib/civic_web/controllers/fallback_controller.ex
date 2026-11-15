@@ -84,6 +84,20 @@ defmodule CivicWeb.FallbackController do
     })
   end
 
+  # Un campo de un formulario que se verificó contra la cuenta (p. ej. la
+  # contraseña actual) y no coincide
+  def call(conn, {:error, {:invalid_field, field}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: %{
+        code: "validation_failed",
+        message: "Datos inválidos",
+        fields: %{field => ["es incorrecta"]}
+      }
+    })
+  end
+
   def call(conn, {:error, :invalid_window}) do
     conn
     |> put_status(:bad_request)
