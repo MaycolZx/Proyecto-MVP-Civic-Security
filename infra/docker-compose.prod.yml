@@ -1,0 +1,86 @@
+# Orquestación de producción en una sola instancia AWS EC2:
+# Caddy (TLS/WSS en :80/:443) -> Phoenix Release (:4000 interno) -> PostGIS (:5432 interno).
+#
+# Uso (desde la raíz del repositorio):
+#   docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml up -d --build
+
+services:
+  db:
+    image: postgis/postgis:17-3.7
+    container_name: civic_db_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD en infra/.env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-civic_prod}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-civic_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Definir POSTGRES_APP_PASSWORD en infra/.env.prod}
+    volumes:
+      - civic_pgdata:/var/lib/postgresql/data
+      - ./postgres/20_civic_roles.sh:/docker-entrypoint-initdb.d/20_civic_roles.sh:ro
+    networks:
+      - civic_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-civic_prod}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: civic-security-backend:prod
+    container_name: civic_backend_prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: ./.env.prod
+        required: false
+    environment:
+      PHX_SERVER: "true"
+      PHX_HOST: ${PHX_HOST:?Definir PHX_HOST en infra/.env.prod}
+      PORT: "4000"
+      DATABASE_URL: ecto://${POSTGRES_APP_USER:-civic_app}:${POSTGRES_APP_PASSWORD}@db:5432/${POSTGRES_DB:-civic_prod}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Definir SECRET_KEY_BASE en infra/.env.prod}
+      CIVIC_KEY_VERIF_V1: ${CIVIC_KEY_VERIF_V1:?Definir CIVIC_KEY_VERIF_V1 en infra/.env.prod}
+      CIVIC_KEY_REP_V1: ${CIVIC_KEY_REP_V1:?Definir CIVIC_KEY_REP_V1 en infra/.env.prod}
+      CIVIC_KEY_VOTE_V1: ${CIVIC_KEY_VOTE_V1:?Definir CIVIC_KEY_VOTE_V1 en infra/.env.prod}
+      CIVIC_UPLOADS_DIR: /var/lib/civic/uploads
+      CLIENT_IP_HEADER: x-real-ip
+    volumes:
+      - civic_uploads:/var/lib/civic/uploads
+    networks:
+      - civic_internal
+
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: civic_caddy_prod
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      PHX_HOST: ${PHX_HOST:?Definir PHX_HOST en infra/.env.prod}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - civic_internal
+
+networks:
+  civic_internal:
+    driver: bridge
+
+volumes:
+  civic_pgdata:
+  civic_uploads:
+  caddy_data:
+  caddy_config:

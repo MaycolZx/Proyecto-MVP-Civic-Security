@@ -1,0 +1,17 @@
+# Proxy inverso con TLS automático (Let's Encrypt) y soporte nativo de WebSockets.
+# PHX_HOST llega por variable de entorno desde infra/.env.prod.
+
+{$PHX_HOST} {
+	encode gzip
+
+	# Las fotos tienen un tope de 2 MB en Phoenix; 3 MB deja margen para cabeceras.
+	request_body {
+		max_size 3MB
+	}
+
+	# Caddy sobrescribe X-Forwarded-Proto (https) por defecto y aquí sobrescribe
+	# X-Real-IP con la IP TCP real del cliente (leída por CivicWeb.ClientIP).
+	reverse_proxy backend:4000 {
+		header_up X-Real-IP {remote_host}
+	}
+}

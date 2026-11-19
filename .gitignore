@@ -99,6 +99,7 @@ doc/api/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 *.pem
 *.key
 secrets/

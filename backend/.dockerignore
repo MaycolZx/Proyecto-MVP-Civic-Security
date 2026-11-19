@@ -1,0 +1,10 @@
+_build/
+deps/
+doc/
+test/
+priv/uploads/
+.elixir_ls/
+*.ez
+*.dump
+.env
+.env.*
